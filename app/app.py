@@ -1,0 +1,121 @@
+"""
+app.py - main app for the Kickstarter evaluator tool
+"""
+
+# *** IMPORTS ***
+from models import DB, Kickstarter, process_record
+
+# try:
+#     from .model_prep import process_record
+# except:
+#     from model_prep import process_record
+from os import getenv
+from flask import Flask, render_template, request
+
+from flask_sqlalchemy import SQLAlchemy
+import pandas as pd
+
+
+def create_app():
+    app = Flask(__name__)
+
+    # Give our APP access to our database
+    DB.init_app(app)
+
+    @app.route("/")
+    def hello_world():  # put application's code here
+        return render_template("home.html")
+
+    @app.route("/db")
+    def load_db():
+        """
+        Empty and repopulate the database with tables defined in models.py
+        :return:
+        """
+        DB.drop_all()
+        DB.create_all()
+        new_ks = Kickstarter(id=1, name="foop")
+        DB.session.add(new_ks)
+        ks = Kickstarter.query.all()
+        ks_string = str(ks[0])
+        DB.session.commit()
+        df = pd.read_sql("select * from test limit 5;", con=engine)
+        # DB.table('Kickstarter')
+        return "Database updated!" + ks_string + str(df.head())
+
+    @app.route("/result", methods=["GET", "POST"])
+    def prediction():
+        """
+
+        :return:
+        """
+        if request.method == "POST":
+            title = request.form["title"]
+            subtitle = request.form["subtitle"]
+            category = request.form["category"]
+            subcategory = request.form["subcategory"]
+            city = request.form["city"]
+            state = request.form["state"]
+            country = request.form["country"]
+            campaign_duration = request.form["campaign_duration"]
+            funding_goal = request.form["funding_goal"]
+
+            location_text = city + ", " + state + ", " + country
+            name_and_blurb_text = title + " " + subtitle
+            campaign_duration = float(campaign_duration)
+            funding_goal = float(funding_goal)
+
+            import requests
+            import urllib.parse
+
+            def get_lat_value(location_text):
+                try:
+                    url = (
+                        "https://nominatim.openstreetmap.org/search/"
+                        + urllib.parse.quote(location_text)
+                        + "?format=json"
+                    )
+                    response = requests.get(url).json()
+                    lat = response[0]["lat"]
+                    lat = float(lat)
+                    return lat
+                except:
+                    return 0.0
+
+            def get_lng_value(location_text):
+                try:
+                    url = (
+                        "https://nominatim.openstreetmap.org/search/"
+                        + urllib.parse.quote(location_text)
+                        + "?format=json"
+                    )
+                    response = requests.get(url).json()
+                    lng = response[0]["lon"]
+                    lng = float(lng)
+                    return lng
+                except:
+                    return 0.0
+
+            # Convert user input location into lat/lng
+            latitude = get_lat_value(location_text=location_text)
+            longitude = get_lng_value(location_text=location_text)
+
+            input_features = [
+                name_and_blurb_text,
+                funding_goal,
+                campaign_duration,
+                latitude,
+                longitude,
+                category,
+                subcategory,
+            ]
+            prediction = process_record(input_feature_list=input_features)
+
+        return render_template("result.html", prediction=prediction)
+
+    return app
+
+
+if __name__ == "__main__":
+    app = create_app()
+    app.run()
